@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>ATK Cold Wallet</title>
+    <link rel="stylesheet" href="index.css">
+    <style type="text/css">
+      .logo {
+        width: 48px;
+        height: 48px;
+      }
+      .no_show {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <el-container>
+        <el-header>
+          <el-menu :default-active="activeIndex" mode="horizontal" @select="handleSelect">
+            <el-menu-item index="0">
+              <img src="logo-atk.png" alt="" class="logo">
+            </el-menu-item>
+            <el-menu-item index="1">THE WALLET</el-menu-item>
+            <el-menu-item index="2">NET CONFIG</el-menu-item>
+          </el-menu>
+        </el-header>
+        <el-main>
+          <el-alert v-bind:class="{ no_show: noErr}"
+                  title="Net work not setup properly"
+                  type="error">
+          </el-alert>
+          <div v-bind:class="{ no_show: wallet_hide}">
+            <el-row :gutter="20">
+              <el-col :span="12" :offset="18">
+                <el-button type="primary" @click="create_new_wallet">Create!</el-button>
+              </el-col>
+            </el-row>
+            <!-- 下面是钱包列表的表格  //-->
+            <el-table
+                    :data="keystore.wallets"
+                    style="width: 100%">
+              <el-table-column
+                      prop="dt"
+                      label="create date"
+                      width="200">
+              </el-table-column>
+              <el-table-column
+                      prop="address"
+                      label="Wallet address">
+              </el-table-column>
+              <el-table-column
+                      fixed="right"
+                      label="Action"
+                      width="100">
+                <template slot-scope="scope">
+                  <el-button @click="handleView(scope.row)" type="text" size="small">Show</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <!-- 下面是查看详情对话框  //-->
+            <el-dialog
+                    v-bind:title="current_address"
+                    :visible.sync="dialogVisible"
+                    width="80%"
+                    :before-close="handleClose">
+              <h1>Balance:{{ current_balance }} wei</h1>
+              <!-- 下面是发起交易表单  //-->
+              <el-form ref="form" :model="form" label-width="80px">
+                <el-form-item
+                        label="to address"
+                        :rules="[
+                          { required: true, message: 'Target address could not be empty!'}
+                        ]"
+                >
+                  <el-input v-model="form.to_addr"></el-input>
+                </el-form-item>
+                <el-form-item label="amount">
+                  <el-input v-model="form.amount"></el-input>
+                </el-form-item>
+                <el-form-item>
+                  <el-button type="primary" @click="onSubmit">立即创建</el-button>
+                  <el-button>取消</el-button>
+                </el-form-item>
+              </el-form>
+
+              <!-- 下面是对话框FOOTER  //-->
+              <span slot="footer" class="dialog-footer">
+                <el-button @click="dialogVisible = false">cloase</el-button>
+              </span>
+            </el-dialog>
+
+          </div>
+          <div v-bind:class="{ no_show: config_hide}">
+            <el-input v-model="end_point" placeholder="Please input http://ip:addr"></el-input>
+            <el-button type="primary" @click="save_endpoint">Setup!</el-button>
+          </div>
+
+        </el-main>
+      </el-container>
+
+
+    </div>
+
+    <script src="vue.js"></script>
+    <script src="index.js"></script>
+    <script src="utils.js"></script>
+    <script>
+      // You can also require other files to run in this process
+      require('./renderer.js')
+      let tx = require('ethereumjs-tx');
+      let eth_util = require('ethereumjs-util');
+
+      let vm = new Vue({
+          el: '#app',
+          data() {
+              return {
+                  dialogVisible:false,
+                  activeIndex: "1",
+                  net_config: {},
+                  keystore: {},
+                  noErr: true,
+                  wallet_hide: false,
+                  config_hide: true,
+                  end_point:'',
+                  current_balance:'',
+                  current_address:'',
+                  current_pk:'',
+                  gasPrice:'',
+                  gasLimit:'',
+                  nonce:'',
+                  to_addr:'',
+                  form: {
+                      to_addr: '',
+                      amount: '1000000000000000',
+                  },
+                  current_tx_hash:''
+              }
+          },
+          created() {
+              // `this` 指向 vm 实例
+              this.init_data()
+          },
+          methods: {
+              handleSelect(key, keyPath) {
+                  console.log(key, keyPath);
+                  if (key==="2"){
+                      this.wallet_hide = true
+                      this.config_hide = false
+                      console.log(this.end_point)
+                  }
+                  if (key==="1"){
+                      this.wallet_hide = false
+                      this.config_hide = true
+                  }
+              },
+              handleClose() {
+                  console.log('d closed!')
+              },
+              init_data() {
+                  loadConfig((resp) => {
+                      this.net_config = resp
+                      if (resp.endpoint === 'http://ip:port'){
+                          this.noErr = false
+                      }else{
+                          this.noErr = true
+                      }
+                      this.end_point = resp.endpoint
+                  })
+                  loadKeyStore( (resp) => {
+                      this.keystore = resp
+                  })
+
+              },
+              save_endpoint() {
+                  JsonRpc(
+                      this.end_point,
+                      {"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":83},
+                      (body, error)=>{
+                          if (error){
+                              alert('Wrong url!')
+                          }else{
+                              this.net_config = { endpoint: this.end_point }
+                              updateNet(this.net_config)
+                          }
+                      }
+                  )
+              },
+              create_new_wallet() {
+                  if (confirm('This action will create a new wallet, that can\'t be removed! Are you sure you want to continue?')){
+                      wallet = create_wallet()
+                      this.keystore.wallets.push(wallet)
+                      updateKeyStore(this.keystore)
+                  }
+              },
+              handleView(row) {
+                  this.current_address = row.address
+                  this.current_pk = row.privateKey
+                  getBalance(this.end_point, this.current_address, (balance, error)=>{
+                      if(error){
+                          alert(error)
+                      }else{
+                          console.log(balance)
+                          this.current_balance = hex2bignum(this.end_point, balance)
+                          loadParam(this.end_point, this.current_address, (gasPrice, nonce, error2)=>{
+                              if(error2){
+                                  alert(error2)
+                              }else {
+                                  this.gasPrice = gasPrice
+                                  this.nonce = nonce
+                                  this.dialogVisible = true
+                                  this.current_tx_hash = ''
+                              }
+                          })
+                      }
+                  })
+
+              },
+              onSubmit(){
+                  let rawTx = {
+                      nonce: this.nonce,
+                      gasPrice: this.gasPrice,
+                      gasLimit: '0x186a0',
+                      to: this.form.to_addr,
+                      value: toHex(this.end_point, this.form.amount),
+                      data: ''
+                  };
+                  let p = new Buffer(this.current_pk.substr(2), 'hex');
+                  let transaction = new tx(rawTx);
+                  transaction.sign(p);
+                  let raw_message = eth_util.bufferToHex(transaction.serialize())
+                  JsonRpc(this.end_point, {"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":[raw_message, ],"id":1}, (resp, error)=>{
+                      if(error){
+                          alert(error)
+                      }else{
+                          console.log(resp)
+                          alert("Tansaction success with hash:" + resp.result)
+                      }
+                  })
+
+              }
+          }
+      })
+
+    </script>
+  </body>
+</html>
